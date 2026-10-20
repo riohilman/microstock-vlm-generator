@@ -11,6 +11,7 @@ client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 def generate_microstock_metadata(image_path: str):
     image = Image.open(image_path)
+    image.load()
     
     prompt = """
     Analyze this image for a microstock platform submission.
