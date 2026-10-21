@@ -2,61 +2,14 @@ import pandas as pd
 import json
 import streamlit as st
 from poc_generator import generate_microstock_metadata
-
-
-ADOBE_CATEGORIES = {
-    1: "Animals",
-    2: "Buildings and Architecture",
-    3: "Business",
-    4: "Drinks",
-    5: "The Environment",
-    6: "States of Mind",
-    7: "Food",
-    8: "Graphic Resources",
-    9: "Hobbies and Leisure",
-    10: "Industry",
-    11: "Landscape",
-    12: "Lifestyle",
-    13: "People",
-    14: "Plants and Flowers",
-    15: "Culture and Religion",
-    16: "Science",
-    17: "Social Issues",
-    18: "Sports",
-    19: "Technology",
-    20: "Transport",
-    21: "Travel",
-}
-
-SHUTTERSTOCK_CATEGORIES = [
-    "Abstract",
-    "Animals/Wildlife",
-    "Arts",
-    "Backgrounds/Textures",
-    "Beauty/Fashion",
-    "Buildings/Landmarks",
-    "Business/Finance",
-    "Celebrities",
-    "Education",
-    "Food and Drink",
-    "Healthcare/Medical",
-    "Holidays",
-    "Industrial",
-    "Interiors",
-    "Miscellaneous",
-    "Nature",
-    "Objects",
-    "Parks/Outdoor",
-    "People",
-    "Religion",
-    "Science",
-    "Signs/Symbols",
-    "Sports/Recreation",
-    "Technology",
-    "Transportation",
-    "Vintage",
-]
-
+from config.platform_config import (
+    ADOBE_CATEGORIES,
+    SHUTTERSTOCK_CATEGORIES,
+)
+from validators.platform_validator import (
+    validate_adobe_metadata,
+    validate_shutterstock_metadata,
+)
 
 st.set_page_config(
     page_title="Microstock Metadata Generator",
@@ -376,64 +329,22 @@ if "batch_results" in st.session_state:
         keywords = item["keywords"]
         keyword_count = len(keywords)
 
-        # Kumpulkan alasan validasi untuk setiap platform
-        adobe_issues = []
-        shutterstock_issues = []
+        # Validasi metadata menggunakan modul terpisah
+        adobe_issues = validate_adobe_metadata(
+            filename=filename,
+            title=title,
+            keyword_count=keyword_count,
+            adobe_category_id=item["adobe_category_id"],
+        )
 
-        if not filename.strip():
-            adobe_issues.append("Nama file kosong.")
-            shutterstock_issues.append("Nama file kosong.")
+        shutterstock_issues = validate_shutterstock_metadata(
+            filename=filename,
+            description=description,
+            keyword_count=keyword_count,
+            category=item["shutterstock_category"],
+            secondary_category=item["shutterstock_secondary_category"],
+        )
 
-        if len(filename) > 30:
-            adobe_issues.append(
-                "Nama file melebihi 30 karakter."
-            )
-
-        if not title:
-            adobe_issues.append("Judul kosong.")
-        if len(title) > 70:
-            adobe_issues.append(
-                f"Judul terlalu panjang ({len(title)} karakter; "
-                "maksimal 70)."
-            )
-        if "," in title:
-            adobe_issues.append(
-                "Judul mengandung koma; hapus koma sebelum ekspor."
-            )
-
-        if not (1 <= keyword_count <= 49):
-            adobe_issues.append(
-                f"Jumlah keyword {keyword_count}; "
-                "gunakan 1–49 keyword."
-            )
-
-        if item["adobe_category_id"] not in ADOBE_CATEGORIES:
-            adobe_issues.append("Kategori Adobe Stock tidak valid.")
-
-        if not description:
-            shutterstock_issues.append("Deskripsi kosong.")
-        if len(description) > 150:
-            shutterstock_issues.append(
-                f"Deskripsi terlalu panjang ({len(description)} "
-                "karakter; maksimal 150)."
-            )
-
-        if not (7 <= keyword_count <= 50):
-            shutterstock_issues.append(
-                f"Jumlah keyword {keyword_count}; "
-                "gunakan 7–50 keyword."
-            )
-
-        if item["shutterstock_category"] not in SHUTTERSTOCK_CATEGORIES:
-            shutterstock_issues.append(
-                "Kategori utama Shutterstock tidak valid."
-            )
-
-        secondary = item["shutterstock_secondary_category"]
-        if secondary and secondary not in SHUTTERSTOCK_CATEGORIES:
-            shutterstock_issues.append(
-                "Kategori kedua Shutterstock tidak valid."
-            )
 
         adobe_valid = len(adobe_issues) == 0
         shutterstock_valid = len(shutterstock_issues) == 0
@@ -485,20 +396,6 @@ if "batch_results" in st.session_state:
                 "Mature content": item["mature_content"],
                 "illustration": item["illustration"],
             })
-
-        st.write("Debug: total hasil batch", len(batch_results))
-        st.write(
-            "Debug: metadata hasil edit",
-            sum(
-                1
-                for result in batch_results
-                if result["status"] == "success"
-                and "edited_metadata" in result
-            ),
-        )
-        st.write("Debug: baris Adobe", len(adobe_rows))
-        st.write("Debug: baris Shutterstock", len(shutterstock_rows))
-
 
     # Tampilkan hasil validasi
     if validation_summary:
