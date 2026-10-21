@@ -31,6 +31,10 @@ def generate_microstock_metadata(image_path: str):
     3. The description must explain the main subject, style, composition,
        and relevant context.
     4. Avoid subjective or promotional words such as "best" or "stunning".
+    5. The description must contain no more than 150 characters,
+       including spaces.
+    6. Write a concise, grammatically correct description that
+       stays within the limit without cutting off a sentence.
 
     RULES FOR KEYWORDS:
     5. Provide 25 to 40 relevant English keywords.
@@ -103,14 +107,28 @@ def generate_microstock_metadata(image_path: str):
     """
 
     response = client.models.generate_content(
-        model='gemini-3.8-flash',
+        model='gemini-3.5-flash-lite',
         contents=[image, prompt],
         config=types.GenerateContentConfig(
             response_mime_type="application/json"
         )
     )
 
-    return json.loads(response.text)
+    metadata = json.loads(response.text)
+
+    # Pengaman: batasi deskripsi hingga 150 karakter,
+    # tanpa memotong kata di tengah jika memungkinkan.
+    description = str(metadata.get("description", "")).strip()
+
+    if len(description) > 150:
+        shortened = description[:150]
+        if " " in shortened:
+            shortened = shortened.rsplit(" ", 1)[0]
+        metadata["description"] = shortened.rstrip(" .,;:-")
+    else:
+        metadata["description"] = description
+
+    return metadata
 
 if __name__ == "__main__":
     test_image = "sample.jpg"

@@ -75,408 +75,504 @@ st.info(
     "pengiriman ke platform microstock."
 )
 
-uploaded_file = st.file_uploader(
-    "Unggah gambar",
+uploaded_files = st.file_uploader(
+    "Unggah satu atau beberapa gambar",
     type=["jpg", "jpeg", "png", "webp"],
+    accept_multiple_files=True,
 )
 
-if uploaded_file is not None:
-    st.subheader("Pratinjau gambar")
-    st.image(
-        uploaded_file,
-        caption=uploaded_file.name,
-        width="stretch",
-    )
+# Pratinjau semua gambar yang dipilih
+if uploaded_files:
+    st.subheader("Daftar Gambar")
 
-    if st.button("Generate Metadata", type="primary"):
-        try:
-            with st.spinner("Sedang menganalisis gambar..."):
-                metadata = generate_microstock_metadata(uploaded_file)
+    st.write(f"Jumlah gambar dipilih: **{len(uploaded_files)}**")
 
-            st.session_state["metadata"] = metadata
-            st.session_state["filename"] = uploaded_file.name
-
-        except Exception as error:
-            st.error(
-                "Metadata gagal dihasilkan. Periksa koneksi internet "
-                "dan konfigurasi API, lalu coba kembali."
-            )
-            st.caption(f"Detail error: {error}")
-
-    if "metadata" in st.session_state:
-        metadata = st.session_state["metadata"]
-
-        st.subheader("Hasil Metadata")
-
-        title = st.text_input(
-            "Title",
-            value=str(metadata.get("title", "")),
-            key="edited_title",
-        )
-
-        title_length = len(title.strip())
-        st.caption(f"Panjang judul: {title_length} karakter")
-
-        if not title.strip():
-            st.warning("Judul tidak boleh kosong.")
-        elif title_length > 70:
-            st.warning(
-                "Adobe Stock: judul melebihi batas 70 karakter."
+    for index, uploaded_image in enumerate(uploaded_files, start=1):
+        with st.expander(
+            f"{index}. {uploaded_image.name}",
+            expanded=False,
+        ):
+            st.image(
+                uploaded_image,
+                caption=uploaded_image.name,
+                width="stretch",
             )
 
-        if "," in title:
-            st.warning(
-                "Adobe Stock: hindari koma dalam judul CSV."
+    st.subheader("Pemrosesan Batch")
+
+    if st.button(
+        "Generate Metadata untuk Semua Gambar",
+        type="primary",
+        key="generate_batch",
+    ):
+        batch_results = []
+
+        progress = st.progress(0)
+        status_text = st.empty()
+
+        for index, uploaded_image in enumerate(uploaded_files):
+            filename = uploaded_image.name
+
+            status_text.text(
+                f"Memproses {index + 1}/{len(uploaded_files)}: "
+                f"{filename}"
             )
 
-        description = st.text_area(
-            "Description",
-            value=str(metadata.get("description", "")),
-            height=120,
-            key="edited_description",
-        )
+            try:
+                uploaded_image.seek(0)
 
-        description_length = len(description.strip())
-        st.caption(
-            f"Panjang deskripsi: {description_length} karakter"
-        )
+                with st.spinner(f"Menganalisis {filename}..."):
+                    metadata = generate_microstock_metadata(
+                        uploaded_image
+                    )
 
-        if not description.strip():
-            st.warning("Deskripsi tidak boleh kosong.")
-        elif description_length > 150:
-            st.warning(
-                "Shutterstock: deskripsi melebihi batas "
-                "150 karakter untuk pengiriman."
+                if not isinstance(metadata, dict):
+                    raise ValueError(
+                        "Hasil AI bukan objek metadata yang valid."
+                    )
+
+                batch_results.append({
+                    "filename": filename,
+                    "status": "success",
+                    "metadata": metadata,
+                    "error": "",
+                })
+
+            except Exception as error:
+                batch_results.append({
+                    "filename": filename,
+                    "status": "error",
+                    "metadata": {},
+                    "error": str(error),
+                })
+
+            progress.progress(
+                (index + 1) / len(uploaded_files)
             )
 
+        st.session_state["batch_results"] = batch_results
 
-        keywords = metadata.get("keywords", [])
-        if not isinstance(keywords, list):
-            keywords = []
+        status_text.text("Pemrosesan batch selesai.")
 
-        keywords_text = st.text_area(
-            "Keywords (pisahkan dengan koma)",
-            value=", ".join(str(keyword) for keyword in keywords),
-            height=120,
-            key="edited_keywords",
+    # Tampilkan ringkasan hasil batch
+    if "batch_results" in st.session_state:
+        results = st.session_state["batch_results"]
+
+        successful = sum(
+            result["status"] == "success"
+            for result in results
         )
+        failed = len(results) - successful
 
-        # Bersihkan spasi dan hapus keyword duplikat
-        keywords_list = []
-        seen_keywords = set()
+        st.subheader("Ringkasan Hasil Batch")
 
-        for keyword in keywords_text.split(","):
-            keyword = keyword.strip()
+        col1, col2, col3 = st.columns(3)
 
-            if keyword and keyword.casefold() not in seen_keywords:
-                keywords_list.append(keyword)
-                seen_keywords.add(keyword.casefold())
+        col1.metric("Total Gambar", len(results))
+        col2.metric("Berhasil", successful)
+        col3.metric("Gagal", failed)
 
-        # Tampilkan jumlah keyword setelah dibersihkan
-        keyword_count = len(keywords_list)
+        for result in results:
+            if result["status"] == "success":
+                st.success(f"Berhasil: {result['filename']}")
+                st.caption(
+                    f"Judul: "
+                    f"{result['metadata'].get('title', '(kosong)')}"
+                )
+            else:
+                st.error(f"Gagal: {result['filename']}")
+                st.caption(f"Detail error: {result['error']}")
 
-        st.write(f"Jumlah keyword unik: **{keyword_count}**")
 
-        if keyword_count > 49:
-            st.warning(
-                "Adobe Stock: jumlah keyword melebihi batas 49 "
-                "berdasarkan template yang digunakan."
+if "batch_results" in st.session_state:
+    st.subheader("Edit Metadata Setiap Gambar")
+
+    batch_results = st.session_state["batch_results"]
+
+    for index, result in enumerate(batch_results):
+        if result["status"] != "success":
+            continue
+
+        metadata = result["metadata"]
+        filename = result["filename"]
+
+        # Namespace widget berdasarkan indeks agar setiap gambar
+        # mempunyai state pengeditan sendiri.
+        widget_prefix = f"batch_{index}"
+
+        with st.expander(filename, expanded=(index == 0)):
+            st.caption(f"Nama file: {filename}")
+
+            title = st.text_input(
+                "Title",
+                value=str(metadata.get("title", "")),
+                key=f"{widget_prefix}_title",
             )
-        elif keyword_count == 0:
-            st.warning("Tambahkan keyword yang relevan terlebih dahulu.")
-        else:
-            st.success("Jumlah keyword berada dalam batas pemeriksaan Adobe Stock.")
 
-        if keyword_count < 7 or keyword_count > 50:
-            st.warning(
-                "Shutterstock: gunakan 7–50 keyword yang relevan."
+            description = st.text_area(
+                "Description",
+                value=str(metadata.get("description", ""))[:150],
+                height=100,
+                max_chars=150,
+                key=f"{widget_prefix}_description",
             )
-        else:
-            st.success("Jumlah keyword berada dalam rentang pemeriksaan Shutterstock.")
 
+            raw_keywords = metadata.get("keywords", [])
+            if not isinstance(raw_keywords, list):
+                raw_keywords = []
 
-        st.subheader("Kategori Microstock")
-
-        # Ambil rekomendasi kategori dari AI
-        recommended_adobe_id = metadata.get("adobe_category_id", 8)
-        if recommended_adobe_id not in ADOBE_CATEGORIES:
-            recommended_adobe_id = 8
-
-        recommended_shutterstock = metadata.get(
-            "shutterstock_categories", ["Miscellaneous"]
-        )
-        if not isinstance(recommended_shutterstock, list):
-            recommended_shutterstock = ["Miscellaneous"]
-
-        recommended_shutterstock = [
-            category
-            for category in recommended_shutterstock
-            if category in SHUTTERSTOCK_CATEGORIES
-        ]
-
-        if not recommended_shutterstock:
-            recommended_shutterstock = ["Miscellaneous"]
-
-        adobe_category_id = st.selectbox(
-            "Kategori Adobe Stock",
-            options=list(ADOBE_CATEGORIES.keys()),
-            index=list(ADOBE_CATEGORIES.keys()).index(recommended_adobe_id),
-            format_func=lambda category_id: (
-                f"{category_id} - {ADOBE_CATEGORIES[category_id]}"
-            ),
-            key="adobe_category",
-        )
-
-        shutterstock_category = st.selectbox(
-            "Kategori Shutterstock (utama)",
-            options=SHUTTERSTOCK_CATEGORIES,
-            index=SHUTTERSTOCK_CATEGORIES.index(
-                recommended_shutterstock[0]
-            ),
-            key="shutterstock_category",
-        )
-
-        # Rekomendasi kategori kedua dari AI, jika tersedia
-        secondary_options = [
-            category
-            for category in SHUTTERSTOCK_CATEGORIES
-            if category != shutterstock_category
-        ]
-
-        recommended_secondary = next(
-            (
-                category
-                for category in recommended_shutterstock[1:]
-                if category in secondary_options
-            ),
-            next(
-                (
-                    category
-                    for category in secondary_options
-                    if category == "Objects"
+            keywords_text = st.text_area(
+                "Keywords (pisahkan dengan koma)",
+                value=", ".join(
+                    str(keyword) for keyword in raw_keywords
                 ),
-                secondary_options[0],
-            ),
-        )
+                height=100,
+                key=f"{widget_prefix}_keywords",
+            )
 
-        shutterstock_secondary = st.selectbox(
-            "Kategori Shutterstock (kedua, opsional)",
-            options=["Tidak ada"] + secondary_options,
-            index=(
-                secondary_options.index(recommended_secondary) + 1
+            # Bersihkan spasi dan hapus duplikat keyword.
+            keywords_list = []
+            seen_keywords = set()
+
+            for keyword in keywords_text.split(","):
+                keyword = keyword.strip()
+
+                if keyword and keyword.casefold() not in seen_keywords:
+                    keywords_list.append(keyword)
+                    seen_keywords.add(keyword.casefold())
+
+            st.caption(
+                f"Jumlah keyword unik: {len(keywords_list)}"
+            )
+
+            recommended_adobe_id = metadata.get(
+                "adobe_category_id", 8
+            )
+            if (
+                not isinstance(recommended_adobe_id, int)
+                or recommended_adobe_id not in ADOBE_CATEGORIES
+            ):
+                recommended_adobe_id = 8
+
+            adobe_category_id = st.selectbox(
+                "Kategori Adobe Stock",
+                options=list(ADOBE_CATEGORIES.keys()),
+                index=list(ADOBE_CATEGORIES.keys()).index(
+                    recommended_adobe_id
+                ),
+                format_func=lambda category_id: (
+                    f"{category_id} - "
+                    f"{ADOBE_CATEGORIES[category_id]}"
+                ),
+                key=f"{widget_prefix}_adobe_category",
+            )
+
+            recommended_shutterstock = metadata.get(
+                "shutterstock_categories", ["Miscellaneous"]
+            )
+
+            if not isinstance(recommended_shutterstock, list):
+                recommended_shutterstock = []
+
+            recommended_shutterstock = [
+                category
+                for category in recommended_shutterstock
+                if category in SHUTTERSTOCK_CATEGORIES
+            ]
+
+            if not recommended_shutterstock:
+                recommended_shutterstock = ["Miscellaneous"]
+
+            shutterstock_category = st.selectbox(
+                "Kategori Shutterstock",
+                options=SHUTTERSTOCK_CATEGORIES,
+                index=SHUTTERSTOCK_CATEGORIES.index(
+                    recommended_shutterstock[0]
+                ),
+                key=f"{widget_prefix}_shutterstock_category",
+            )
+
+            secondary_options = [
+                category
+                for category in SHUTTERSTOCK_CATEGORIES
+                if category != shutterstock_category
+            ]
+
+            secondary_default = (
+                recommended_shutterstock[1]
                 if len(recommended_shutterstock) > 1
-                else 0
-            ),
-            key="shutterstock_secondary",
-        )
+                and recommended_shutterstock[1] in secondary_options
+                else "Tidak ada"
+            )
 
+            secondary_choices = ["Tidak ada"] + secondary_options
 
-        st.caption(
-            "Kategori awal hanya pilihan bawaan. "
-            "Pastikan kategori sesuai dengan isi gambar."
-        )
+            shutterstock_secondary = st.selectbox(
+                "Kategori Shutterstock kedua (opsional)",
+                options=secondary_choices,
+                index=secondary_choices.index(secondary_default),
+                key=f"{widget_prefix}_shutterstock_secondary",
+            )
 
-        st.subheader("Metadata Tambahan Shutterstock")
+            editorial = st.selectbox(
+                "Editorial",
+                options=["no", "yes"],
+                key=f"{widget_prefix}_editorial",
+            )
 
-        editorial = st.selectbox(
-            "Editorial",
-            options=["no", "yes"],
-            index=0,
-            key="shutterstock_editorial",
-            help="Pilih yes jika gambar memenuhi ketentuan konten editorial Shutterstock.",
-        )
+            mature_content = st.selectbox(
+                "Mature content",
+                options=["no", "yes"],
+                key=f"{widget_prefix}_mature",
+            )
 
-        mature_content = st.selectbox(
-            "Mature content",
-            options=["no", "yes"],
-            index=0,
-            key="shutterstock_mature",
-            help="Periksa apakah gambar termasuk konten dewasa menurut ketentuan Shutterstock.",
-        )
+            illustration = st.selectbox(
+                "Illustration",
+                options=["no", "yes"],
+                key=f"{widget_prefix}_illustration",
+            )
 
-        illustration = st.selectbox(
-            "Illustration",
-            options=["no", "yes"],
-            index=0,
-            key="shutterstock_illustration",
-            help="Pilih yes jika aset merupakan ilustrasi sesuai definisi Shutterstock.",
-        )
+            # Simpan metadata hasil edit kembali ke item terkait.
+            result["edited_metadata"] = {
+                "filename": filename,
+                "title": title,
+                "description": description,
+                "keywords": keywords_list,
+                "adobe_category_id": adobe_category_id,
+                "adobe_category_name": ADOBE_CATEGORIES[
+                    adobe_category_id
+                ],
+                "shutterstock_category": shutterstock_category,
+                "shutterstock_secondary_category": (
+                    shutterstock_secondary
+                    if shutterstock_secondary != "Tidak ada"
+                    else ""
+                ),
+                "editorial": editorial,
+                "mature_content": mature_content,
+                "illustration": illustration,
+            }
 
+    st.session_state["batch_results"] = batch_results
 
-        edited_metadata = {
-            "filename": st.session_state["filename"],
-            "title": title,
-            "description": description,
-            "keywords": keywords_list,
-            "adobe_category_id": adobe_category_id,
-            "adobe_category_name": ADOBE_CATEGORIES[adobe_category_id],
-            "shutterstock_category": shutterstock_category,
-            "shutterstock_secondary_category": (
-                shutterstock_secondary
-                if shutterstock_secondary != "Tidak ada"
-                else ""
-            ),
-            "editorial": editorial,
-            "mature_content": mature_content,
-            "illustration": illustration,
-        }
+    st.divider()
+    st.subheader("Validasi dan Ekspor CSV Batch")
 
-        # Validasi nama file
-        filename = edited_metadata["filename"]
+    adobe_rows = []
+    shutterstock_rows = []
+    validation_summary = []
 
-        st.subheader("Validasi Nama File")
-        st.caption(
-            f"Nama file: {filename} "
-            f"({len(filename)} karakter, termasuk ekstensi)"
-        )
+    for result in batch_results:
+        if result["status"] != "success":
+            continue
+
+        item = result.get("edited_metadata")
+        if not item:
+            continue
+
+        filename = item["filename"]
+        title = item["title"].strip()
+        description = item["description"].strip()
+        keywords = item["keywords"]
+        keyword_count = len(keywords)
+
+        # Kumpulkan alasan validasi untuk setiap platform
+        adobe_issues = []
+        shutterstock_issues = []
 
         if not filename.strip():
-            st.error("Nama file tidak boleh kosong.")
-        elif len(filename) > 30:
-            st.warning(
-                "Adobe Stock: nama file melebihi batas 30 karakter. "
-                "Periksa nama file aset dan CSV sebelum mengunggah."
-            )
-        else:
-            st.success(
-                "Panjang nama file memenuhi batas Adobe Stock."
+            adobe_issues.append("Nama file kosong.")
+            shutterstock_issues.append("Nama file kosong.")
+
+        if len(filename) > 30:
+            adobe_issues.append(
+                "Nama file melebihi 30 karakter."
             )
 
-        if filename != uploaded_file.name:
-            st.error(
-                "Nama file metadata berbeda dari gambar yang sedang "
-                "diunggah. Generate ulang metadata sebelum ekspor."
+        if not title:
+            adobe_issues.append("Judul kosong.")
+        if len(title) > 70:
+            adobe_issues.append(
+                f"Judul terlalu panjang ({len(title)} karakter; "
+                "maksimal 70)."
+            )
+        if "," in title:
+            adobe_issues.append(
+                "Judul mengandung koma; hapus koma sebelum ekspor."
             )
 
-        # Validasi akhir untuk setiap platform
-        filename = edited_metadata["filename"]
-        title_value = edited_metadata["title"].strip()
-        description_value = edited_metadata["description"].strip()
-        keyword_count = len(edited_metadata["keywords"])
-
-        adobe_valid = (
-            bool(filename.strip())
-            and len(filename) <= 30
-            and bool(title_value)
-            and len(title_value) <= 70
-            and "," not in title_value
-            and keyword_count >= 1
-            and keyword_count <= 49
-        )
-
-        shutterstock_valid = (
-            bool(filename.strip())
-            and bool(description_value)
-            and len(description_value) <= 150
-            and 7 <= keyword_count <= 50
-            and bool(edited_metadata["shutterstock_category"])
-        )
-
-        st.subheader("Status Validasi Ekspor")
-
-        if adobe_valid:
-            st.success("Adobe Stock: pemeriksaan dasar lulus.")
-        else:
-            st.warning(
-                "Adobe Stock: periksa nama file, judul, dan jumlah keyword."
+        if not (1 <= keyword_count <= 49):
+            adobe_issues.append(
+                f"Jumlah keyword {keyword_count}; "
+                "gunakan 1–49 keyword."
             )
 
-        if shutterstock_valid:
-            st.success("Shutterstock: pemeriksaan dasar lulus.")
-        else:
-            st.warning(
-                "Shutterstock: periksa nama file, deskripsi, "
-                "dan jumlah keyword."
+        if item["adobe_category_id"] not in ADOBE_CATEGORIES:
+            adobe_issues.append("Kategori Adobe Stock tidak valid.")
+
+        if not description:
+            shutterstock_issues.append("Deskripsi kosong.")
+        if len(description) > 150:
+            shutterstock_issues.append(
+                f"Deskripsi terlalu panjang ({len(description)} "
+                "karakter; maksimal 150)."
             )
 
-        st.subheader("Pratinjau Kategori")
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.write("**Adobe Stock**")
-            st.write(
-                f"{edited_metadata['adobe_category_id']} - "
-                f"{edited_metadata['adobe_category_name']}"
+        if not (7 <= keyword_count <= 50):
+            shutterstock_issues.append(
+                f"Jumlah keyword {keyword_count}; "
+                "gunakan 7–50 keyword."
             )
 
-        with col2:
-            st.write("**Shutterstock**")
-            st.write(edited_metadata["shutterstock_category"])
+        if item["shutterstock_category"] not in SHUTTERSTOCK_CATEGORIES:
+            shutterstock_issues.append(
+                "Kategori utama Shutterstock tidak valid."
+            )
 
-        st.download_button(
-            label="Unduh Metadata JSON",
-            data=json.dumps(
-                edited_metadata,
-                ensure_ascii=False,
-                indent=2,
+        secondary = item["shutterstock_secondary_category"]
+        if secondary and secondary not in SHUTTERSTOCK_CATEGORIES:
+            shutterstock_issues.append(
+                "Kategori kedua Shutterstock tidak valid."
+            )
+
+        adobe_valid = len(adobe_issues) == 0
+        shutterstock_valid = len(shutterstock_issues) == 0
+
+        validation_summary.append({
+            "Filename": filename,
+            "Adobe Stock": (
+                "Lulus" if adobe_valid else "Perlu diperbaiki"
             ),
-            file_name="microstock_metadata.json",
-            mime="application/json",
-        )
+            "Masalah Adobe Stock": (
+                "; ".join(adobe_issues)
+                if adobe_issues else "-"
+            ),
+            "Shutterstock": (
+                "Lulus" if shutterstock_valid
+                else "Perlu diperbaiki"
+            ),
+            "Masalah Shutterstock": (
+                "; ".join(shutterstock_issues)
+                if shutterstock_issues else "-"
+            ),
+            "Jumlah keyword": keyword_count,
+        })
 
-        st.subheader("Ekspor CSV")
-
-        keywords_list = edited_metadata["keywords"]
-        keywords_csv = ", ".join(keywords_list)
-
-
-        # CSV Adobe Stock
-        adobe_df = pd.DataFrame([
-            {
-                "Filename": edited_metadata["filename"],
-                "Title": edited_metadata["title"],
-                "Keywords": keywords_csv,
-                "Category": edited_metadata["adobe_category_id"],
+        # Masukkan metadata yang lolos validasi Adobe Stock
+        if adobe_valid:
+            adobe_rows.append({
+                "Filename": filename,
+                "Title": title,
+                "Keywords": ", ".join(keywords),
+                "Category": item["adobe_category_id"],
                 "Releases": "",
-            }
-        ])
+            })
 
-        adobe_csv = adobe_df.to_csv(index=False).encode("utf-8-sig")
+        # Masukkan metadata yang lolos validasi Shutterstock
+        if shutterstock_valid:
+            categories = [item["shutterstock_category"]]
 
-        st.download_button(
-            label="Unduh CSV Adobe Stock",
-            data=adobe_csv,
-            file_name="adobe_stock_metadata.csv",
-            mime="text/csv",
-            key="download_adobe_csv",
-            disabled=not adobe_valid,
+            secondary = item["shutterstock_secondary_category"]
+            if secondary and secondary not in categories:
+                categories.append(secondary)
+
+            shutterstock_rows.append({
+                "Filename": filename,
+                "Description": description,
+                "Keywords": ", ".join(keywords),
+                "Categories": ", ".join(categories),
+                "Editorial": item["editorial"],
+                "Mature content": item["mature_content"],
+                "illustration": item["illustration"],
+            })
+
+        st.write("Debug: total hasil batch", len(batch_results))
+        st.write(
+            "Debug: metadata hasil edit",
+            sum(
+                1
+                for result in batch_results
+                if result["status"] == "success"
+                and "edited_metadata" in result
+            ),
+        )
+        st.write("Debug: baris Adobe", len(adobe_rows))
+        st.write("Debug: baris Shutterstock", len(shutterstock_rows))
+
+
+    # Tampilkan hasil validasi
+    if validation_summary:
+        st.dataframe(
+            pd.DataFrame(validation_summary),
+            hide_index=True,
+            use_container_width=True,
+        )
+    else:
+        st.info(
+            "Belum ada metadata berhasil yang siap divalidasi. "
+            "Jalankan batch terlebih dahulu."
         )
 
+    # Ekspor satu CSV Adobe Stock dengan banyak baris
+    st.markdown("### Adobe Stock")
 
-        # CSV Shutterstock
-        shutterstock_categories = [
-            edited_metadata["shutterstock_category"]
-        ]
+    st.write(
+        f"Jumlah gambar yang lolos validasi: **{len(adobe_rows)}**"
+    )
 
-        secondary_category = edited_metadata[
-            "shutterstock_secondary_category"
-        ]
+    adobe_columns = [
+        "Filename", "Title", "Keywords", "Category", "Releases"
+    ]
 
-        if secondary_category:
-            shutterstock_categories.append(secondary_category)
+    adobe_df = pd.DataFrame(adobe_rows, columns=adobe_columns)
+    adobe_csv = adobe_df.to_csv(index=False).encode("utf-8-sig")
 
-        shutterstock_df = pd.DataFrame([
-            {
-                "Filename": edited_metadata["filename"],
-                "Description": edited_metadata["description"],
-                "Keywords": keywords_csv,
-                "Categories": ", ".join(shutterstock_categories),
-                "Editorial": edited_metadata["editorial"],
-                "Mature content": edited_metadata["mature_content"],
-                "illustration": edited_metadata["illustration"],
-            }
-        ])
+    st.download_button(
+        label="Unduh CSV Adobe Stock (Batch)",
+        data=adobe_csv,
+        file_name="adobe_stock_batch.csv",
+        mime="text/csv",
+        disabled=len(adobe_rows) == 0,
+        key="download_adobe_batch",
+    )
 
-        shutterstock_csv = (
-            shutterstock_df.to_csv(index=False).encode("utf-8-sig")
-        )
+    # Ekspor satu CSV Shutterstock dengan banyak baris
+    st.markdown("### Shutterstock")
 
-        st.download_button(
-            label="Unduh CSV Shutterstock",
-            data=shutterstock_csv,
-            file_name="shutterstock_metadata.csv",
-            mime="text/csv",
-            key="download_shutterstock_csv",
-            disabled=not shutterstock_valid,
-        )
+    st.write(
+        "Jumlah gambar yang lolos validasi: "
+        f"**{len(shutterstock_rows)}**"
+    )
+
+    shutterstock_columns = [
+        "Filename",
+        "Description",
+        "Keywords",
+        "Categories",
+        "Editorial",
+        "Mature content",
+        "illustration",
+    ]
+
+    shutterstock_df = pd.DataFrame(
+        shutterstock_rows,
+        columns=shutterstock_columns,
+    )
+
+    shutterstock_csv = (
+        shutterstock_df.to_csv(index=False).encode("utf-8-sig")
+    )
+
+    st.download_button(
+        label="Unduh CSV Shutterstock (Batch)",
+        data=shutterstock_csv,
+        file_name="shutterstock_batch.csv",
+        mime="text/csv",
+        disabled=len(shutterstock_rows) == 0,
+        key="download_shutterstock_batch",
+    )
+
+    st.caption(
+        "Validasi ini merupakan pemeriksaan dasar aplikasi, "
+        "bukan jaminan bahwa semua metadata akan diterima platform."
+    )
