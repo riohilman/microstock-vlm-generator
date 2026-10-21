@@ -15,17 +15,91 @@ def generate_microstock_metadata(image_path: str):
     
     prompt = """
     Analyze this image for a microstock platform submission.
-    Generate metadata in JSON format strictly matching this structure:
+    Generate metadata in English and return valid JSON using this exact structure:
+
     {
-      "title": "Descriptive title (5-10 words)",
-      "description": "Detailed description about object, style, composition, and context",
-      "keywords": ["tag1", "tag2", ...]
+      "title": "Descriptive title",
+      "description": "Detailed description of the image",
+      "keywords": ["keyword1", "keyword2"],
+      "adobe_category_id": 8,
+      "shutterstock_categories": ["Technology", "Business"]
     }
 
-    Rules:
-    1. Language MUST be English.
-    2. Provide 25 to 40 relevant microstock keywords/tags.
-    3. Do not include subjective or promotional words (e.g., 'best', 'stunning').
+    RULES FOR TITLE AND DESCRIPTION:
+    1. Write in English.
+    2. The title must accurately describe the image.
+    3. The description must explain the main subject, style, composition,
+       and relevant context.
+    4. Avoid subjective or promotional words such as "best" or "stunning".
+
+    RULES FOR KEYWORDS:
+    5. Provide 25 to 40 relevant English keywords.
+    6. Put the most important keywords first.
+    7. Avoid irrelevant, repetitive, or misleading keywords.
+
+    ADOBE STOCK CATEGORY:
+    Select exactly ONE category ID from this official category list:
+    1 = Animals
+    2 = Buildings and Architecture
+    3 = Business
+    4 = Drinks
+    5 = The Environment
+    6 = States of Mind
+    7 = Food
+    8 = Graphic Resources
+    9 = Hobbies and Leisure
+    10 = Industry
+    11 = Landscape
+    12 = Lifestyle
+    13 = People
+    14 = Plants and Flowers
+    15 = Culture and Religion
+    16 = Science
+    17 = Social Issues
+    18 = Sports
+    19 = Technology
+    20 = Transport
+    21 = Travel
+
+    SHUTTERSTOCK CATEGORIES:
+    Select ONE or TWO categories from this exact list:
+    Abstract
+    Animals/Wildlife
+    Arts
+    Backgrounds/Textures
+    Beauty/Fashion
+    Buildings/Landmarks
+    Business/Finance
+    Celebrities
+    Education
+    Food and Drink
+    Healthcare/Medical
+    Holidays
+    Industrial
+    Interiors
+    Miscellaneous
+    Nature
+    Objects
+    Parks/Outdoor
+    People
+    Religion
+    Science
+    Signs/Symbols
+    Sports/Recreation
+    Technology
+    Transportation
+    Vintage
+
+    CATEGORY SELECTION RULES:
+    1. Choose categories based on the actual image content, not merely its
+       color, visual style, or file name.
+    2. For Adobe Stock, return the numeric category ID, not its name.
+    3. For Shutterstock, return category names exactly as written above.
+    4. Select the most relevant categories for the image's intended use.
+    5. For icons, illustrations, and design assets, consider Graphic Resources
+       for Adobe Stock when appropriate.
+    6. Do not assume all illustrations belong to Graphic Resources.
+    7. Return only valid JSON. Do not include Markdown or additional commentary.
     """
 
     response = client.models.generate_content(
