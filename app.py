@@ -10,6 +10,10 @@ from validators.platform_validator import (
     validate_adobe_metadata,
     validate_shutterstock_metadata,
 )
+from exporters.csv_exporter import (
+    export_adobe_csv,
+    export_shutterstock_csv,
+)
 
 st.set_page_config(
     page_title="Microstock Metadata Generator",
@@ -417,12 +421,7 @@ if "batch_results" in st.session_state:
         f"Jumlah gambar yang lolos validasi: **{len(adobe_rows)}**"
     )
 
-    adobe_columns = [
-        "Filename", "Title", "Keywords", "Category", "Releases"
-    ]
-
-    adobe_df = pd.DataFrame(adobe_rows, columns=adobe_columns)
-    adobe_csv = adobe_df.to_csv(index=False).encode("utf-8-sig")
+    adobe_csv = export_adobe_csv(adobe_rows)
 
     st.download_button(
         label="Unduh CSV Adobe Stock (Batch)",
@@ -441,24 +440,7 @@ if "batch_results" in st.session_state:
         f"**{len(shutterstock_rows)}**"
     )
 
-    shutterstock_columns = [
-        "Filename",
-        "Description",
-        "Keywords",
-        "Categories",
-        "Editorial",
-        "Mature content",
-        "illustration",
-    ]
-
-    shutterstock_df = pd.DataFrame(
-        shutterstock_rows,
-        columns=shutterstock_columns,
-    )
-
-    shutterstock_csv = (
-        shutterstock_df.to_csv(index=False).encode("utf-8-sig")
-    )
+    shutterstock_csv = export_shutterstock_csv(shutterstock_rows)
 
     st.download_button(
         label="Unduh CSV Shutterstock (Batch)",
