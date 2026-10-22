@@ -14,6 +14,7 @@ from exporters.csv_exporter import (
     export_adobe_csv,
     export_shutterstock_csv,
 )
+from services.batch_processor import process_batch
 
 st.set_page_config(
     page_title="Microstock Metadata Generator",
@@ -62,54 +63,26 @@ if uploaded_files:
         type="primary",
         key="generate_batch",
     ):
-        batch_results = []
 
         progress = st.progress(0)
         status_text = st.empty()
 
-        for index, uploaded_image in enumerate(uploaded_files):
-            filename = uploaded_image.name
 
+        def update_batch_progress(completed, total, filename):
             status_text.text(
-                f"Memproses {index + 1}/{len(uploaded_files)}: "
-                f"{filename}"
+                f"Memproses {completed}/{total}: {filename}"
             )
+            progress.progress(completed / total)
 
-            try:
-                uploaded_image.seek(0)
 
-                with st.spinner(f"Menganalisis {filename}..."):
-                    metadata = generate_microstock_metadata(
-                        uploaded_image
-                    )
-
-                if not isinstance(metadata, dict):
-                    raise ValueError(
-                        "Hasil AI bukan objek metadata yang valid."
-                    )
-
-                batch_results.append({
-                    "filename": filename,
-                    "status": "success",
-                    "metadata": metadata,
-                    "error": "",
-                })
-
-            except Exception as error:
-                batch_results.append({
-                    "filename": filename,
-                    "status": "error",
-                    "metadata": {},
-                    "error": str(error),
-                })
-
-            progress.progress(
-                (index + 1) / len(uploaded_files)
-            )
+        batch_results = process_batch(
+            uploaded_files,
+            on_progress=update_batch_progress,
+        )
 
         st.session_state["batch_results"] = batch_results
-
         status_text.text("Pemrosesan batch selesai.")
+
 
     # Tampilkan ringkasan hasil batch
     if "batch_results" in st.session_state:
