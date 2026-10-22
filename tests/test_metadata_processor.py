@@ -104,3 +104,43 @@ def test_adobe_and_shutterstock_validation_are_independent():
     assert len(shutterstock_rows) == 1
     assert summary[0]["Adobe Stock"] == "Perlu diperbaiki"
     assert summary[0]["Shutterstock"] == "Lulus"
+
+    
+def test_shutterstock_two_categories_are_exported_in_order():
+    result = make_result()
+    result["edited_metadata"]["shutterstock_category"] = "Business/Finance"
+    result["edited_metadata"]["shutterstock_secondary_category"] = "Technology"
+
+    _, shutterstock_rows, _ = process_metadata_results([result])
+
+    assert len(shutterstock_rows) == 1
+    assert shutterstock_rows[0]["Categories"] == (
+        "Business/Finance, Technology"
+    )
+
+
+def test_shutterstock_without_secondary_category_exports_one_category():
+    result = make_result()
+    result["edited_metadata"]["shutterstock_category"] = "Business/Finance"
+    result["edited_metadata"]["shutterstock_secondary_category"] = ""
+
+    _, shutterstock_rows, _ = process_metadata_results([result])
+
+    assert len(shutterstock_rows) == 1
+    assert shutterstock_rows[0]["Categories"] == "Business/Finance"
+
+
+def test_shutterstock_invalid_secondary_category_is_rejected():
+    result = make_result()
+    result["edited_metadata"]["shutterstock_category"] = "Business/Finance"
+    result["edited_metadata"]["shutterstock_secondary_category"] = (
+        "Not A Category"
+    )
+
+    _, shutterstock_rows, summary = process_metadata_results([result])
+
+    assert shutterstock_rows == []
+    assert summary[0]["Shutterstock"] == "Perlu diperbaiki"
+    assert "Kategori kedua Shutterstock tidak valid." in (
+        summary[0]["Masalah Shutterstock"]
+    )
