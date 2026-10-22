@@ -1,18 +1,30 @@
 import os
 import json
+
 from PIL import Image
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
+from validators.metadata_schema import (
+    validate_generated_metadata,
+)
+
+
 load_dotenv()
 
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 def generate_microstock_metadata(image_path: str):
-    image = Image.open(image_path)
-    image.load()
-    
+    api_key = os.getenv("GEMINI_API_KEY")
+
+    if not api_key:
+        raise RuntimeError(
+            "GEMINI_API_KEY belum dikonfigurasi."
+        )
+
+    with Image.open(image_path) as source_image:
+        image = source_image.copy()
+
     prompt = """
     Analyze this image for a microstock platform submission.
     Generate metadata in English and return valid JSON using this exact structure:
@@ -37,9 +49,9 @@ def generate_microstock_metadata(image_path: str):
        stays within the limit without cutting off a sentence.
 
     RULES FOR KEYWORDS:
-    5. Provide 25 to 40 relevant English keywords.
-    6. Put the most important keywords first.
-    7. Avoid irrelevant, repetitive, or misleading keywords.
+    1. Provide 25 to 40 relevant English keywords.
+    2. Put the most important keywords first.
+    3. Avoid irrelevant, repetitive, or misleading keywords.
 
     ADOBE STOCK CATEGORY:
     Select exactly ONE category ID from this official category list:
@@ -106,37 +118,56 @@ def generate_microstock_metadata(image_path: str):
     7. Return only valid JSON. Do not include Markdown or additional commentary.
     """
 
+    client = genai.Client(api_key=api_key)
+
     response = client.models.generate_content(
-        model='gemini-3.5-flash-lite',
+        model="gemini-3.5-flash-lite",
         contents=[image, prompt],
         config=types.GenerateContentConfig(
             response_mime_type="application/json"
-        )
+        ),
     )
 
-    metadata = json.loads(response.text)
+    response_text = response.text
 
-    # Pengaman: batasi deskripsi hingga 150 karakter,
-    # tanpa memotong kata di tengah jika memungkinkan.
-    description = str(metadata.get("description", "")).strip()
+    if not isinstance(response_text, str) or not response_text.strip():
+        raise ValueError("Respons AI kosong atau tidak berisi teks.")
 
-    if len(description) > 150:
-        shortened = description[:150]
-        if " " in shortened:
-            shortened = shortened.rsplit(" ", 1)[0]
-        metadata["description"] = shortened.rstrip(" .,;:-")
-    else:
-        metadata["description"] = description
+    try:
+        metadata = json.loads(response_text)
+    except json.JSONDecodeError as error:
+        raise ValueError(
+            "Respons AI bukan JSON yang valid."
+        ) from error
+
+    issues = validate_generated_metadata(metadata)
+
+    if issues:
+        raise ValueError(
+            "Metadata AI tidak memenuhi skema: "
+            + "; ".join(issues)
+        )
 
     return metadata
 
+
 if __name__ == "__main__":
     test_image = "sample.jpg"
+
     if os.path.exists(test_image):
         metadata = generate_microstock_metadata(test_image)
-        print(json.dumps(metadata, indent=2))
-        
-        with open("sample_output.json", "w") as f:
-            json.dump(metadata, f, indent=2)
+
+        print(json.dumps(metadata, indent=2, ensure_ascii=False))
+
+        with open("sample_output.json", "w", encoding="utf-8") as output_file:
+            json.dump(
+                metadata,
+                output_file,
+                indent=2,
+                ensure_ascii=False,
+            )
     else:
-        print(f"File {test_image} tidak ditemukan. Siapkan 1 gambar sampel di direktori proyek.")
+        print(
+            f"File {test_image} tidak ditemukan. "
+            "Siapkan 1 gambar sampel di direktori proyek."
+        )
